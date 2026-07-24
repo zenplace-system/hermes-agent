@@ -10,6 +10,7 @@ import pytest
 
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.anthropic_adapter import (
+    _is_bedrock_mantle_endpoint,
     _is_azure_anthropic_endpoint,
     _is_oauth_token,
     _refresh_oauth_token,
@@ -63,6 +64,39 @@ class TestBuildAnthropicClient:
 
 
 
+    def test_bedrock_mantle_uses_bearer_auth(self):
+        with patch("agent.anthropic_adapter._anthropic_sdk") as mock_sdk:
+            build_anthropic_client(
+                "bedrock-long-term-key",
+                base_url="https://bedrock-mantle.ap-northeast-1.api.aws/anthropic",
+            )
+            kwargs = mock_sdk.Anthropic.call_args[1]
+            assert kwargs["auth_token"] == "bedrock-long-term-key"
+            assert "api_key" not in kwargs
+
+    def test_bedrock_mantle_detection_is_host_and_path_scoped(self):
+        assert _is_bedrock_mantle_endpoint(
+            "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic"
+        ) is True
+        assert _is_bedrock_mantle_endpoint(
+            "https://bedrock-mantle.us-west-2.api.aws/anthropic/v1"
+        ) is False
+        assert _is_bedrock_mantle_endpoint(
+            "https://bedrock-mantle.ap-northeast-1.api.aws.evil.example/anthropic"
+        ) is False
+        assert _is_bedrock_mantle_endpoint(
+            "http://bedrock-mantle.ap-northeast-1.api.aws/anthropic"
+        ) is False
+
+    def test_azure_anthropic_endpoint_keeps_context_1m_beta(self):
+        with patch("agent.anthropic_adapter._anthropic_sdk") as mock_sdk:
+            build_anthropic_client(
+                "azure-key",
+                base_url="https://example.services.ai.azure.com/models/anthropic",
+            )
+            kwargs = mock_sdk.Anthropic.call_args[1]
+            betas = kwargs["default_headers"]["anthropic-beta"]
+            assert "context-1m-2025-08-07" in betas
 
 
 
@@ -182,6 +216,23 @@ class TestIsClaudeCodeTokenValid:
 
 
 class TestResolveAnthropicToken:
+    def test_mantle_resolves_only_bedrock_key(self, monkeypatch):
+        monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+        monkeypatch.setenv("ANTHROPIC_TOKEN", "must-not-leak")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-leak-either")
+
+        assert resolve_anthropic_token(
+            "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic"
+        ) == "bedrock-key"
+
+    def test_mantle_fails_closed_without_bedrock_key(self, monkeypatch):
+        monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        monkeypatch.setenv("ANTHROPIC_TOKEN", "must-not-leak")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "must-not-leak-either")
+
+        assert resolve_anthropic_token(
+            "https://bedrock-mantle.ap-northeast-1.api.aws/anthropic"
+        ) is None
     def test_prefers_oauth_token_over_api_key(self, monkeypatch, tmp_path):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-mykey")
         monkeypatch.setenv("ANTHROPIC_TOKEN", "sk-ant-oat01-mytoken")
