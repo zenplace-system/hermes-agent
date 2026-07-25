@@ -53,14 +53,63 @@ def test_runtime_mantle_does_not_fall_back_to_anthropic_credentials(monkeypatch)
         rp.resolve_runtime_provider(requested="anthropic")
 
 
+def test_model_switch_direct_alias_resolves_mantle_credentials_before_validation(
+    monkeypatch,
+):
+    """A Codex session can switch to a Mantle alias without Anthropic credentials."""
+    import hermes_cli.model_switch as ms
+
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "bedrock-key")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_TOKEN", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(
+        ms,
+        "DIRECT_ALIASES",
+        {
+            "fable": ms.DirectAlias(
+                "anthropic.claude-fable-5",
+                "anthropic",
+                MANTLE_BASE,
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        "hermes_cli.models.validate_requested_model",
+        lambda *args, **kwargs: {
+            "accepted": True,
+            "persist": True,
+            "recognized": True,
+            "message": None,
+        },
+    )
+    monkeypatch.setattr(ms, "get_model_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ms, "get_model_capabilities", lambda *args, **kwargs: None)
+
+    result = ms.switch_model(
+        raw_input="fable",
+        current_provider="openai-codex",
+        current_model="gpt-5.5",
+        current_base_url="https://chatgpt.com/backend-api/codex",
+        current_api_key="codex-key",
+    )
+
+    assert result.success is True
+    assert result.target_provider == "anthropic"
+    assert result.new_model == "anthropic.claude-fable-5"
+    assert result.base_url == MANTLE_BASE
+    assert result.api_mode == "anthropic_messages"
+    assert result.api_key == "bedrock-key"
+
+
 def test_bedrock_api_key_flow_routes_claude_to_messages(monkeypatch):
     config = {}
     saved_config = {}
     saved_env = {}
 
     monkeypatch.setattr(
-        "hermes_cli.config.get_env_value",
-        lambda name: "bedrock-key" if name == "AWS_BEARER_TOKEN_BEDROCK" else "",
+        "hermes_cli.auth._resolve_api_key_provider_secret",
+        lambda provider, config: ("bedrock-key", "AWS_BEARER_TOKEN_BEDROCK"),
     )
     monkeypatch.setattr(
         "hermes_cli.config.save_env_value",
