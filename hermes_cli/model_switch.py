@@ -1375,6 +1375,15 @@ def switch_model(
     api_key = current_api_key
     base_url = current_base_url
     api_mode = ""
+    direct_alias = None
+    if resolved_alias:
+        _ensure_direct_aliases()
+        direct_alias = DIRECT_ALIASES.get(resolved_alias)
+    direct_alias_base_url = (
+        direct_alias.base_url
+        if direct_alias is not None and direct_alias.base_url
+        else None
+    )
 
     if provider_changed or explicit_provider:
         import os
@@ -1421,6 +1430,7 @@ def switch_model(
             try:
                 runtime = resolve_runtime_provider(
                     requested=target_provider,
+                    explicit_base_url=direct_alias_base_url,
                     target_model=new_model,
                 )
                 api_key = runtime.get("api_key", "")
@@ -1441,6 +1451,7 @@ def switch_model(
         try:
             runtime = resolve_runtime_provider(
                 requested=current_provider,
+                explicit_base_url=direct_alias_base_url,
                 target_model=new_model,
             )
             # If resolution fell through to "custom" (e.g. named custom provider like
@@ -1454,11 +1465,9 @@ def switch_model(
             pass
 
     # --- Direct alias override: use exact base_url from the alias if set ---
-    if resolved_alias:
-        _ensure_direct_aliases()
-        _da = DIRECT_ALIASES.get(resolved_alias)
-        if _da is not None and _da.base_url:
-            base_url = _da.base_url
+    if direct_alias is not None:
+        if direct_alias.base_url:
+            base_url = direct_alias.base_url
             api_mode = ""  # clear so determine_api_mode re-detects from URL
             if not api_key:
                 api_key = "no-key-required"
@@ -1479,10 +1488,15 @@ def switch_model(
         api_mode = determine_api_mode(target_provider, base_url)
 
     # --- Normalize model name for target provider ---
-    new_model = _resolve_named_custom_model_id(
-        new_model, target_provider, custom_providers
-    )
-    new_model = normalize_model_for_provider(new_model, target_provider)
+    # Direct aliases are exact endpoint/model mappings. Preserve their model ID
+    # verbatim instead of applying provider normalization.
+    if direct_alias is not None:
+        new_model = direct_alias.model
+    else:
+        new_model = _resolve_named_custom_model_id(
+            new_model, target_provider, custom_providers
+        )
+        new_model = normalize_model_for_provider(new_model, target_provider)
 
     # --- Validate ---
     try:
