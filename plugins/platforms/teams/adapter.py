@@ -989,7 +989,11 @@ class TeamsAdapter(BasePlatformAdapter):
             and (text.strip() or media_urls)
             and not text.lstrip().startswith("/")
         ):
-            placeholder = await self.send(conv.id, "🤔 考え中...", reply_to=msg_id)
+            placeholder = await self.send(
+                conv.id,
+                self._streaming_placeholder_text(),
+                reply_to=msg_id,
+            )
             if placeholder.success and placeholder.message_id:
                 metadata["_stream_message_id"] = str(placeholder.message_id)
             elif not placeholder.success:
@@ -1224,7 +1228,7 @@ class TeamsAdapter(BasePlatformAdapter):
                 result = await self.edit_message(
                     chat_id,
                     str(stream_message_id),
-                    f"🤔 {status_text}",
+                    status_text,
                     metadata=metadata,
                 )
                 if result.success:
@@ -1290,6 +1294,13 @@ class TeamsAdapter(BasePlatformAdapter):
             streaming.get("transport") or streaming.get("mode") or "edit"
         ).strip().lower()
         return enabled and transport not in {"0", "false", "off", "disabled", "none"}
+
+    def _streaming_placeholder_text(self) -> str:
+        extra = getattr(self.config, "extra", None) or {}
+        configured = extra.get("streaming_placeholder_text")
+        if isinstance(configured, str) and configured.strip():
+            return configured.strip()
+        return "確認しています..."
 
     async def _send_media_attachment(
         self,

@@ -66,7 +66,7 @@ async def test_teams_inbound_message_sends_placeholder_and_carries_metadata():
 
     adapter.send.assert_awaited_once_with(
         "conversation-1",
-        "🤔 考え中...",
+        "確認しています...",
         reply_to="incoming-1",
     )
     assert captured_events
@@ -131,6 +131,18 @@ async def test_teams_typing_status_edits_placeholder_message():
     assert call.args[:3] == (
         "chat-1",
         "placeholder-1",
-        "🤔 Web で検索中...",
+        "Web で検索中...",
     )
     adapter._app.send.assert_not_called()
+
+
+def test_teams_streaming_placeholder_text_can_be_configured():
+    adapter = TeamsAdapter(
+        PlatformConfig(
+            extra={
+                "streaming_placeholder_text": "依頼を受け付けました...",
+            },
+        ),
+    )
+
+    assert adapter._streaming_placeholder_text() == "依頼を受け付けました..."
