@@ -10,8 +10,27 @@ import pytest
 
 from gateway.config import PlatformConfig
 from gateway.platforms.base import SendResult
+from gateway.run import _merge_stream_message_metadata
 from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
 from plugins.platforms.teams.adapter import TeamsAdapter
+
+
+def test_stream_message_metadata_merge_accepts_event_metadata_dict():
+    merged = _merge_stream_message_metadata(
+        {"thread_id": "thread-1"},
+        {"_stream_message_id": "placeholder-1"},
+    )
+
+    assert merged == {
+        "thread_id": "thread-1",
+        "_stream_message_id": "placeholder-1",
+    }
+
+
+def test_teams_streaming_placeholder_can_be_disabled_by_platform_extra():
+    adapter = TeamsAdapter(PlatformConfig(extra={"streaming_placeholder": False}))
+
+    assert adapter._streaming_placeholder_enabled() is False
 
 
 @pytest.mark.asyncio
