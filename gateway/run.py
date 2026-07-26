@@ -328,7 +328,9 @@ def _merge_stream_message_metadata(
     event: Any,
 ) -> Optional[Dict[str, Any]]:
     """Carry adapter-created streaming message ids into send/edit metadata."""
-    event_metadata = getattr(event, "metadata", None)
+    event_metadata = (
+        event if isinstance(event, dict) else getattr(event, "metadata", None)
+    )
     if not isinstance(event_metadata, dict):
         return metadata
     stream_message_id = event_metadata.get("_stream_message_id")
@@ -13979,6 +13981,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 moa_config=getattr(event, "_moa_config", None),
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                event_metadata=getattr(event, "metadata", None),
             )
 
             # Stop persistent typing indicator now that the agent is done.
@@ -19724,6 +19727,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         session_key: str = None,
         run_generation: Optional[int] = None,
         event_message_id: Optional[str] = None,
+        event_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Forward the message to a remote Hermes API server instead of
         running a local AIAgent.
@@ -19821,7 +19825,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         _thread_metadata: Optional[Dict[str, Any]] = _merge_stream_message_metadata(
             self._thread_metadata_for_source(source, event_message_id),
-            event,
+            event_metadata,
         )
 
         if _streaming_enabled:
@@ -20031,6 +20035,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
+        event_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Profile-scoping wrapper around the agent run.
 
@@ -20049,6 +20054,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                event_metadata=event_metadata,
             )
 
         profile_home = self._resolve_profile_home_for_source(source)
@@ -20060,6 +20066,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_prompt=channel_prompt, moa_config=moa_config,
                 persist_user_message=persist_user_message,
                 persist_user_timestamp=persist_user_timestamp,
+                event_metadata=event_metadata,
             )
 
     def _profile_name_for_source(self, source: SessionSource) -> Optional[str]:
@@ -20181,6 +20188,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         moa_config: Optional[dict] = None,
         persist_user_message: Optional[Any] = None,
         persist_user_timestamp: Optional[float] = None,
+        event_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Run the agent with the given message and context.
@@ -20205,6 +20213,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 session_key=session_key,
                 run_generation=run_generation,
                 event_message_id=event_message_id,
+                event_metadata=event_metadata,
             )
 
         from run_agent import AIAgent
@@ -21203,7 +21212,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             ) if _progress_thread_id else None
         _status_thread_metadata = _merge_stream_message_metadata(
             _status_thread_metadata,
-            event,
+            event_metadata,
         )
 
         def _status_callback_sync(event_type: str, message: str) -> None:
