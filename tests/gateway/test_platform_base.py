@@ -1,6 +1,7 @@
 """Tests for gateway/platforms/base.py — MessageEvent, media extraction, message truncation."""
 
 import os
+import json
 import time
 from unittest.mock import patch
 
@@ -892,6 +893,42 @@ class TestMediaDeliveryPathValidation:
         ])
 
         assert filtered == [(str(safe.resolve()), True)]
+
+    def test_filter_maps_docker_output_to_host_mount(self, tmp_path, monkeypatch):
+        root = tmp_path / "host-output"
+        artifact = root / "diagram.svg"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("<svg/>")
+        self._patch_roots(monkeypatch, root)
+        monkeypatch.setenv("TERMINAL_ENV", "docker")
+        monkeypatch.setenv(
+            "TERMINAL_DOCKER_VOLUMES",
+            json.dumps([f"{root}:/output"]),
+        )
+
+        filtered = BasePlatformAdapter.filter_media_delivery_paths([
+            ("/output/diagram.svg", False),
+        ])
+
+        assert filtered == [(str(artifact.resolve()), False)]
+
+    def test_filter_does_not_map_non_output_container_mount(
+        self, tmp_path, monkeypatch
+    ):
+        root = tmp_path / "workspace"
+        artifact = root / "diagram.svg"
+        artifact.parent.mkdir(parents=True)
+        artifact.write_text("<svg/>")
+        self._patch_roots(monkeypatch, root)
+        monkeypatch.setenv("TERMINAL_ENV", "docker")
+        monkeypatch.setenv(
+            "TERMINAL_DOCKER_VOLUMES",
+            json.dumps([f"{root}:/workspace:ro"]),
+        )
+
+        assert BasePlatformAdapter.filter_media_delivery_paths([
+            ("/workspace/diagram.svg", False),
+        ]) == []
 
     def test_allows_operator_configured_extra_root(self, tmp_path, monkeypatch):
         extra_root = tmp_path / "operator-media"

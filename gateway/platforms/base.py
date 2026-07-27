@@ -8,6 +8,7 @@ and implement the required methods.
 import asyncio
 import inspect
 import ipaddress
+import json
 import logging
 import os
 import random
@@ -3717,12 +3718,45 @@ class BasePlatformAdapter(ABC):
         return validate_media_delivery_path(path)
 
     @staticmethod
+    def _map_container_output_path(path: str) -> str:
+        """Map a Docker ``/output`` artifact back to its host-visible mount."""
+        raw = str(path or "")
+        if os.getenv("TERMINAL_ENV", "").strip().lower() != "docker":
+            return raw
+        try:
+            volumes = json.loads(os.getenv("TERMINAL_DOCKER_VOLUMES", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            return raw
+        if not isinstance(volumes, list):
+            return raw
+
+        normalized = os.path.normpath(raw)
+        for spec in volumes:
+            if not isinstance(spec, str):
+                continue
+            match = re.match(
+                r"^(?P<host>/.+):(?P<container>/(?:output|outputs))(?::[^:]*)?$",
+                spec,
+            )
+            if not match:
+                continue
+            container = match.group("container")
+            if normalized == container or not normalized.startswith(container + os.sep):
+                continue
+            relative = os.path.relpath(normalized, container)
+            if relative == os.pardir or relative.startswith(os.pardir + os.sep):
+                continue
+            return os.path.join(match.group("host"), relative)
+        return raw
+
+    @staticmethod
     def filter_media_delivery_paths(media_files) -> List[Tuple[str, bool]]:
         """Drop unsafe MEDIA paths and normalize accepted paths."""
         safe_media: List[Tuple[str, bool]] = []
         for media_path, is_voice in media_files or []:
             raw = str(media_path)
-            safe_path = validate_media_delivery_path(raw)
+            mapped = BasePlatformAdapter._map_container_output_path(raw)
+            safe_path = validate_media_delivery_path(mapped)
             if safe_path:
                 safe_media.append((safe_path, bool(is_voice)))
             else:
@@ -3735,7 +3769,8 @@ class BasePlatformAdapter(ABC):
         safe_paths: List[str] = []
         for file_path in file_paths or []:
             raw = str(file_path)
-            safe_path = validate_media_delivery_path(raw)
+            mapped = BasePlatformAdapter._map_container_output_path(raw)
+            safe_path = validate_media_delivery_path(mapped)
             if safe_path:
                 safe_paths.append(safe_path)
             else:
