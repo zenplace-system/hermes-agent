@@ -69,20 +69,21 @@ def _int_value(value: Any) -> int:
         return 0
 
 
-def _compact_teams_model_switch_confirmation(source, config: dict) -> bool:
-    """Return whether Teams should receive the compact model-switch result."""
+def _compact_teams_model_switch_settings(source, config: dict) -> dict | None:
+    """Return configured compact Teams model-switch copy, if enabled."""
     platform = getattr(source, "platform", None)
     platform_name = getattr(platform, "value", platform)
     if str(platform_name or "").strip().lower() != "teams":
-        return False
+        return None
     try:
         teams_display = config["display"]["platforms"]["teams"]
     except (KeyError, TypeError):
-        return False
-    return (
-        isinstance(teams_display, dict)
-        and teams_display.get("model_switch_details", True) is False
-    )
+        return None
+    if not isinstance(teams_display, dict):
+        return None
+    if teams_display.get("model_switch_details", True) is not False:
+        return None
+    return teams_display
 
 
 def _model_switch_skew_guard() -> Optional[str]:
@@ -2029,7 +2030,10 @@ class GatewaySlashCommandsMixin:
                         # shortened to their trailing slug for the UI.
                         plabel = result.provider_label or result.target_provider
                         lines = [t("gateway.model.switched", model=format_model_for_display(result.new_model))]
-                        if _compact_teams_model_switch_confirmation(source, _load_gateway_config()):
+                        compact_settings = _compact_teams_model_switch_settings(
+                            source, _load_gateway_config()
+                        )
+                        if compact_settings is not None:
                             if result.warning_message:
                                 logger.info(
                                     "Teams compact model switch hid internal warning: %s",
@@ -2038,7 +2042,14 @@ class GatewaySlashCommandsMixin:
                             if persist_global:
                                 lines.append(t("gateway.model.saved_global"))
                             else:
-                                lines.append(t("gateway.model.session_only_hint"))
+                                lines.append(
+                                    str(
+                                        compact_settings.get(
+                                            "model_switch_session_hint",
+                                            "このスレッドだけに適用されます。",
+                                        )
+                                    )
+                                )
                             return "\n".join(lines)
                         lines.append(t("gateway.model.provider_label", provider=plabel))
                         mi = result.model_info
@@ -2363,7 +2374,10 @@ class GatewaySlashCommandsMixin:
             # Build confirmation message with full metadata
             provider_label = result.provider_label or result.target_provider
             lines = [t("gateway.model.switched", model=format_model_for_display(result.new_model))]
-            if _compact_teams_model_switch_confirmation(source, _load_gateway_config()):
+            compact_settings = _compact_teams_model_switch_settings(
+                source, _load_gateway_config()
+            )
+            if compact_settings is not None:
                 if result.warning_message:
                     logger.info(
                         "Teams compact model switch hid internal warning: %s",
@@ -2372,9 +2386,23 @@ class GatewaySlashCommandsMixin:
                 if persist_global:
                     lines.append(t("gateway.model.saved_global"))
                 elif one_turn:
-                    lines.append("    (next turn only — restores after one response)")
+                    lines.append(
+                        str(
+                            compact_settings.get(
+                                "model_switch_once_hint",
+                                "次の1回だけ適用されます。",
+                            )
+                        )
+                    )
                 else:
-                    lines.append(t("gateway.model.session_only_hint"))
+                    lines.append(
+                        str(
+                            compact_settings.get(
+                                "model_switch_session_hint",
+                                "このスレッドだけに適用されます。",
+                            )
+                        )
+                    )
                 return "\n".join(lines)
             lines.append(t("gateway.model.provider_label", provider=provider_label))
 
