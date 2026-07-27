@@ -69,6 +69,22 @@ def _int_value(value: Any) -> int:
         return 0
 
 
+def _compact_teams_model_switch_confirmation(source, config: dict) -> bool:
+    """Return whether Teams should receive the compact model-switch result."""
+    platform = getattr(source, "platform", None)
+    platform_name = getattr(platform, "value", platform)
+    if str(platform_name or "").strip().lower() != "teams":
+        return False
+    try:
+        teams_display = config["display"]["platforms"]["teams"]
+    except (KeyError, TypeError):
+        return False
+    return (
+        isinstance(teams_display, dict)
+        and teams_display.get("model_switch_details", True) is False
+    )
+
+
 def _model_switch_skew_guard() -> Optional[str]:
     """Refuse a model switch when the gateway is running stale code.
 
@@ -2013,6 +2029,17 @@ class GatewaySlashCommandsMixin:
                         # shortened to their trailing slug for the UI.
                         plabel = result.provider_label or result.target_provider
                         lines = [t("gateway.model.switched", model=format_model_for_display(result.new_model))]
+                        if _compact_teams_model_switch_confirmation(source, _load_gateway_config()):
+                            if result.warning_message:
+                                logger.info(
+                                    "Teams compact model switch hid internal warning: %s",
+                                    result.warning_message,
+                                )
+                            if persist_global:
+                                lines.append(t("gateway.model.saved_global"))
+                            else:
+                                lines.append(t("gateway.model.session_only_hint"))
+                            return "\n".join(lines)
                         lines.append(t("gateway.model.provider_label", provider=plabel))
                         mi = result.model_info
                         from hermes_cli.model_switch import resolve_display_context_length_async
@@ -2336,6 +2363,19 @@ class GatewaySlashCommandsMixin:
             # Build confirmation message with full metadata
             provider_label = result.provider_label or result.target_provider
             lines = [t("gateway.model.switched", model=format_model_for_display(result.new_model))]
+            if _compact_teams_model_switch_confirmation(source, _load_gateway_config()):
+                if result.warning_message:
+                    logger.info(
+                        "Teams compact model switch hid internal warning: %s",
+                        result.warning_message,
+                    )
+                if persist_global:
+                    lines.append(t("gateway.model.saved_global"))
+                elif one_turn:
+                    lines.append("    (next turn only — restores after one response)")
+                else:
+                    lines.append(t("gateway.model.session_only_hint"))
+                return "\n".join(lines)
             lines.append(t("gateway.model.provider_label", provider=provider_label))
 
             # Context: always resolve via the provider-aware chain so Codex OAuth,
