@@ -12,7 +12,15 @@ from gateway.config import PlatformConfig
 from gateway.platforms.base import SendResult
 from gateway.run import _merge_stream_message_metadata
 from gateway.stream_consumer import GatewayStreamConsumer, StreamConsumerConfig
-from plugins.platforms.teams.adapter import TeamsAdapter
+from plugins.platforms.teams.adapter import TeamsAdapter, _rewrite_known_bang_command
+
+
+def test_teams_rewrites_known_bang_model_command():
+    assert _rewrite_known_bang_command("!model opus") == "/model opus"
+
+
+def test_teams_does_not_rewrite_unknown_bang_text():
+    assert _rewrite_known_bang_command("!not-a-command hello") == "!not-a-command hello"
 
 
 def test_stream_message_metadata_merge_accepts_event_metadata_dict():
@@ -72,6 +80,40 @@ async def test_teams_inbound_message_sends_placeholder_and_carries_metadata():
     assert captured_events
     assert captured_events[0].text == "今日の天気は？"
     assert captured_events[0].metadata["_stream_message_id"] == "placeholder-1"
+
+
+@pytest.mark.asyncio
+async def test_teams_inbound_bang_model_reaches_gateway_as_slash_command():
+    adapter = TeamsAdapter(PlatformConfig(extra={}))
+    adapter._app = SimpleNamespace(id="bot-id")
+    adapter.send = AsyncMock()
+    captured_events = []
+
+    async def _capture(event):
+        captured_events.append(event)
+
+    adapter.handle_message = _capture
+
+    activity = SimpleNamespace(
+        id="incoming-model-1",
+        text="<at>本部AI エルメス</at> !model opus",
+        from_=SimpleNamespace(id="user-id", aad_object_id="aad-id", name="Yuta"),
+        conversation=SimpleNamespace(
+            id="conversation-1",
+            name="honbu hermes（TEST）",
+            conversation_type="channel",
+            tenant_id="tenant-1",
+        ),
+        attachments=[],
+    )
+    ctx = SimpleNamespace(activity=activity, conversation_ref=SimpleNamespace())
+
+    await adapter._on_message(ctx)
+
+    assert captured_events[0].text == "/model opus"
+    assert captured_events[0].get_command() == "model"
+    assert captured_events[0].get_command_args() == "opus"
+    adapter.send.assert_not_called()
 
 
 @pytest.mark.asyncio

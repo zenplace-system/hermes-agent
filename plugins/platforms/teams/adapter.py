@@ -108,6 +108,23 @@ _MAX_BODY_BYTES = 1_048_576
 _WEBHOOK_PATH = "/api/messages"
 
 
+def _rewrite_known_bang_command(text: str) -> str:
+    """Rewrite a known leading ``!cmd`` to the gateway ``/cmd`` form."""
+    if not text.startswith("!"):
+        return text
+
+    try:
+        from hermes_cli.commands import is_gateway_known_command
+
+        first_token = text[1:].split(maxsplit=1)[0]
+        cmd_name = first_token.split("@", 1)[0].lower()
+        if cmd_name and "/" not in cmd_name and is_gateway_known_command(cmd_name):
+            return "/" + text[1:]
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return text
+
+
 def _parse_bool(value: Any, *, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -858,6 +875,7 @@ class TeamsAdapter(BasePlatformAdapter):
         if "<at>" in text:
             import re
             text = re.sub(r"<at>[^<]*</at>\s*", "", text).strip()
+        text = _rewrite_known_bang_command(text.lstrip())
 
         # Determine chat type from conversation
         conv = activity.conversation
