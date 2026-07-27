@@ -220,7 +220,13 @@ async def test_teams_compact_model_switch_uses_locale_and_hides_internal_warning
             {
                 "display": {
                     "language": "ja",
-                    "platforms": {"teams": {"model_switch_details": False}},
+                    "platforms": {
+                        "teams": {
+                            "model_switch_details": False,
+                            "model_switch_session_hint": "このスレッドだけに適用されます。",
+                            "model_switch_once_hint": "次の1回だけ適用されます。",
+                        }
+                    },
                 },
                 "model": {"default": "old-model", "provider": "openai-codex"},
                 "providers": {},
@@ -233,7 +239,6 @@ async def test_teams_compact_model_switch_uses_locale_and_hides_internal_warning
     switch_result.warning_message = (
         "Your next message will run preflight compression before the model replies."
     )
-    monkeypatch.setenv("HERMES_LANGUAGE", "ja")
     monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
     monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: yaml.safe_load(cfg_path.read_text()))
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
@@ -243,6 +248,8 @@ async def test_teams_compact_model_switch_uses_locale_and_hides_internal_warning
     )
     monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: hermes_home)
     monkeypatch.setattr("hermes_cli.config.get_hermes_home", lambda: hermes_home)
+    from agent.i18n import reset_language_cache
+    reset_language_cache()
 
     result = await _make_runner()._handle_model_command(
         _make_event("/model gpt-5.5", platform=Platform("teams"))
@@ -250,8 +257,9 @@ async def test_teams_compact_model_switch_uses_locale_and_hides_internal_warning
 
     assert result == (
         "モデルを `gpt-5.5` に切り替えました\n"
-        "_(このセッションのみ — 永続化するには `--global` を追加)_"
+        "このスレッドだけに適用されます。"
     )
     assert "Warning" not in result
     assert "警告" not in result
     assert "preflight compression" not in result
+    assert "--global" not in result
