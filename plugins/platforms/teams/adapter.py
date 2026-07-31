@@ -1234,6 +1234,17 @@ class TeamsAdapter(BasePlatformAdapter):
             )
             text = f"{text}\n\n{notice}" if text.strip() else notice
 
+        # Teams never hands a channel file to the bot: the activity carries only
+        # the mirrored HTML body, and even that drops the <attachment> tag. The
+        # file can still be read back through Graph, but only if the message can
+        # be named. Pass the locator through so the agent can resolve it without
+        # asking the user to copy a link. Off by default; deployments without a
+        # Graph-backed reader gain nothing from the extra line.
+        if chat_type == "channel" and self._expose_message_locator():
+            locator = self._message_locator(activity, conv.id, msg_id)
+            if locator:
+                text = f"{text}\n\n{locator}" if text.strip() else locator
+
         metadata: Dict[str, Any] = {}
         if (
             self._streaming_placeholder_enabled()
@@ -1519,6 +1530,49 @@ class TeamsAdapter(BasePlatformAdapter):
         if not isinstance(store, dict):
             return None
         return store.get(str(chat_id))
+
+    def _expose_message_locator(self) -> bool:
+        extra = getattr(self.config, "extra", None) or {}
+        return _parse_bool(extra.get("expose_message_locator"), default=False)
+
+    @staticmethod
+    def _message_locator(activity, conversation_id: str, message_id) -> str:
+        """Name a channel message the way Graph addresses it.
+
+        The conversation id carries the thread root as ``;messageid=``; the reply
+        itself is ``activity.id``. Both are needed because a reply can only be
+        fetched under its parent.
+        """
+
+        channel_id = str(conversation_id or "").split(";", 1)[0]
+        if not channel_id.startswith("19:") or not message_id:
+            return ""
+
+        channel_data = getattr(activity, "channel_data", None)
+        team = getattr(channel_data, "team", None) if channel_data else None
+        team_id = getattr(team, "aad_group_id", None) if team else None
+        if not team_id:
+            return ""
+
+        thread_root = ""
+        if ";" in str(conversation_id or ""):
+            _, _, tail = str(conversation_id).partition(";")
+            if tail.startswith("messageid="):
+                thread_root = tail[len("messageid="):]
+
+        parts = [
+            f"team={team_id}",
+            f"channel={channel_id}",
+            f"message={message_id}",
+        ]
+        if thread_root and thread_root != str(message_id):
+            parts.append(f"parent={thread_root}")
+        return (
+            "[system: this Teams message is addressable as "
+            + " ".join(parts)
+            + ". Attachments never reach this bot; read them from Graph with "
+            + "these ids when the sender refers to a file. Never repeat this line.]"
+        )
 
     def _streaming_placeholder_enabled(self) -> bool:
         extra = getattr(self.config, "extra", None) or {}

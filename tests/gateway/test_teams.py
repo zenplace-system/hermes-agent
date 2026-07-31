@@ -632,6 +632,65 @@ class TestTeamsAttachmentClassification:
         assert "teirei.md" in event.text
         assert "NOT visible to you" in event.text
 
+    def _make_channel_activity(self, attachments, text="こちらの資料読めますか？"):
+        activity = self._make_activity(attachments, text=text)
+        activity.conversation.id = "19:abc@thread.tacv2;messageid=1785377662123"
+        activity.conversation.conversation_type = "channel"
+        activity.id = "1785466106476"
+        activity.channel_data = MagicMock()
+        activity.channel_data.team = MagicMock()
+        activity.channel_data.team.aad_group_id = "3692432a-team"
+        return activity
+
+    @pytest.mark.anyio
+    async def test_channel_locator_is_off_by_default(self):
+        adapter = self._make_adapter()
+        activity = self._make_channel_activity([self._html_body_attachment()])
+
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert "addressable as" not in event.text
+
+    @pytest.mark.anyio
+    async def test_channel_locator_names_reply_and_parent(self):
+        adapter = self._make_adapter()
+        adapter.config.extra = {"expose_message_locator": True}
+        activity = self._make_channel_activity([self._html_body_attachment()])
+
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert "team=3692432a-team" in event.text
+        assert "channel=19:abc@thread.tacv2" in event.text
+        assert "message=1785466106476" in event.text
+        assert "parent=1785377662123" in event.text
+        # 依頼者の文面は残す。locator は後ろに足すだけ
+        assert event.text.startswith("こちらの資料読めますか？")
+
+    @pytest.mark.anyio
+    async def test_channel_locator_skipped_without_team_id(self):
+        adapter = self._make_adapter()
+        adapter.config.extra = {"expose_message_locator": True}
+        activity = self._make_channel_activity([self._html_body_attachment()])
+        activity.channel_data.team.aad_group_id = None
+
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert "addressable as" not in event.text
+
+    @pytest.mark.anyio
+    async def test_dm_gets_no_locator(self):
+        adapter = self._make_adapter()
+        adapter.config.extra = {"expose_message_locator": True}
+        activity = self._make_activity([self._html_body_attachment()])
+
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert "addressable as" not in event.text
+
     @pytest.mark.anyio
     async def test_file_info_without_download_url_is_reported(self):
         adapter = self._make_adapter()
