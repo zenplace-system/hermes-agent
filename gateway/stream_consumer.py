@@ -245,6 +245,16 @@ class GatewayStreamConsumer:
             self._message_created_ts = time.monotonic()
             self._preview_message_ids.add(self._message_id)
             self._segment_preview_message_ids.add(self._message_id)
+            logger.info(
+                "stream: editing the adapter's placeholder message %s",
+                self._message_id,
+            )
+        else:
+            # No placeholder to reuse: the answer becomes a new message and any
+            # placeholder the adapter already posted is left stranded above it.
+            logger.info(
+                "stream: no placeholder id in metadata, starting a new message"
+            )
         self._already_sent = False
         self._edit_supported = True  # Disabled when progressive edits are no longer usable
         self._last_edit_time = 0.0

@@ -1258,8 +1258,21 @@ class TeamsAdapter(BasePlatformAdapter):
             )
             if placeholder.success and placeholder.message_id:
                 metadata["_stream_message_id"] = str(placeholder.message_id)
-            elif not placeholder.success:
-                logger.debug(
+                logger.info(
+                    "[teams] streaming placeholder captured id=%s (the answer "
+                    "edits this message)",
+                    placeholder.message_id,
+                )
+            elif placeholder.success:
+                # Without the id the stream has nothing to edit, so the answer
+                # lands in a second message and the placeholder stays on screen
+                # forever. Worth a warning: it is visible to every requester.
+                logger.warning(
+                    "[teams] streaming placeholder sent but returned no message "
+                    "id; the answer will arrive as a separate message"
+                )
+            else:
+                logger.warning(
                     "[teams] streaming placeholder send failed: %s",
                     placeholder.error,
                 )
