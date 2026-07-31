@@ -1180,6 +1180,17 @@ class TeamsAdapter(BasePlatformAdapter):
                     att_name or "-", content_type or "-",
                 )
 
+        # Graph shows a channel file as an <attachment id="..."> tag in the
+        # message body. If the mirrored body carries that tag too, a file can be
+        # detected even when the activity itself lists no attachment, which is
+        # the only cheap trigger available for re-reading the message.
+        if html_body_mirror:
+            logger.info(
+                "[teams] html body mirror: %d chars, attachment tag=%s",
+                len(html_body_mirror),
+                "yes" if "<attachment" in html_body_mirror.lower() else "no",
+            )
+
         # Put hyperlink targets back into the text. Skipped for slash commands
         # so a command's arguments are never rewritten.
         if html_body_mirror and not text.lstrip().startswith("/"):
