@@ -2680,3 +2680,57 @@ class TestFlushPendingSync:
         # The finally net should have drained + signaled the queued barrier.
         flushed = await flush_done
         assert flushed is True
+
+
+# ── segment reset keeps an untouched adapter placeholder ─────────────────
+#
+# A turn that calls a tool before emitting any text hits the tool-boundary
+# reset first.  Dropping the placeholder id there leaves "checking..." on
+# screen and delivers the answer as a second message (measured in the honbu
+# Teams channel: every tool-using turn produced two bot messages).
+
+
+def _consumer_with_placeholder(message_id="placeholder-1"):
+    consumer = GatewayStreamConsumer(
+        adapter=MagicMock(),
+        chat_id="chat-1",
+        metadata={"_stream_message_id": message_id},
+    )
+    return consumer
+
+
+def test_segment_reset_keeps_placeholder_never_written_to():
+    consumer = _consumer_with_placeholder()
+
+    consumer._reset_segment_state()
+
+    assert consumer._message_id == "placeholder-1"
+    assert consumer._segment_preview_message_ids == {"placeholder-1"}
+
+
+def test_segment_reset_drops_message_that_already_showed_text():
+    consumer = _consumer_with_placeholder()
+    consumer._last_sent_text = "partial answer"
+
+    consumer._reset_segment_state()
+
+    assert consumer._message_id is None
+    assert consumer._segment_preview_message_ids == set()
+
+
+def test_segment_reset_still_clears_accumulated_text():
+    consumer = _consumer_with_placeholder()
+    consumer._accumulated = "buffered"
+
+    consumer._reset_segment_state()
+
+    assert consumer._accumulated == ""
+    assert consumer._last_sent_text == ""
+
+
+def test_segment_reset_preserves_no_edit_sentinel():
+    consumer = _consumer_with_placeholder(message_id="__no_edit__")
+
+    consumer._reset_segment_state(preserve_no_edit=True)
+
+    assert consumer._message_id == "__no_edit__"
