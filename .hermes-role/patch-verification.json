@@ -1,12 +1,12 @@
 {
-  "schema_version": 1,
-  "scope": "honbu",
-  "base_upstream": "1161cc0b53fbc89abe81283b13f81d85784bf611",
-  "capabilities": [
-    "external_skill_dirs",
-    "hindsight_memory",
-    "named_profiles",
-    "profile_scoped_gateway"
-  ],
-  "runtime_probe_status": "verified"
+    "schema_version": 1,
+    "scope": "honbu",
+    "base_upstream": "1161cc0b53fbc89abe81283b13f81d85784bf611",
+    "capabilities": [
+        "external_skill_dirs",
+        "hindsight_memory",
+        "named_profiles",
+        "profile_scoped_gateway"
+    ],
+    "runtime_probe_status": "verified"
 }
