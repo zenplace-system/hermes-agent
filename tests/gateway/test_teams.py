@@ -895,6 +895,46 @@ class TestTeamsAttachmentClassification:
         assert event.message_type == MessageType.TEXT
         assert event.media_urls == []
 
+    def _reference_attachment(self, name="teirei.md"):
+        # A file attached in a Teams channel arrives as a SharePoint reference.
+        att = MagicMock()
+        att.content_type = "reference"
+        att.content_url = None
+        att.name = name
+        att.content = None
+        return att
+
+    @pytest.mark.anyio
+    async def test_reference_without_url_is_reported_to_the_agent(self):
+        """An attachment we cannot fetch must never vanish quietly.
+
+        Dropping it left the agent answering 'I see no document' to someone who
+        had just attached one, with nothing in the log to explain the gap.
+        """
+
+        adapter = self._make_adapter()
+        activity = self._make_activity([self._reference_attachment()])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.media_urls == []
+        assert "teirei.md" in event.text
+        assert "NOT visible to you" in event.text
+
+    @pytest.mark.anyio
+    async def test_file_info_without_download_url_is_reported(self):
+        adapter = self._make_adapter()
+        attachment = self._file_download_attachment()
+        attachment.content = {"fileType": "pdf"}
+
+        activity = self._make_activity([attachment])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.media_urls == []
+        assert "report.pdf" in event.text
+        assert "NOT visible to you" in event.text
+
 
 # ── _standalone_send (out-of-process cron delivery) ──────────────────────
 
