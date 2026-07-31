@@ -1488,3 +1488,96 @@ class TestFlushPendingSync:
         consumer.finish()
         await task
 
+    @pytest.mark.asyncio
+    async def test_flush_signaled_when_consumer_cancelled(self):
+        """If run() is cancelled while a flush barrier is queued, the finally
+        safety-net wakes the waiter rather than letting it hit the full
+        timeout."""
+        adapter = MagicMock()
+        # Make the first send hang so the consumer is mid-iteration when we
+        # cancel it, with the flush barrier still in the queue behind it.
+        started = asyncio.Event()
+
+        async def _slow_send(*args, **kwargs):
+            started.set()
+            await asyncio.sleep(60)
+            return SimpleNamespace(success=True, message_id="m1")
+
+        adapter.send = AsyncMock(side_effect=_slow_send)
+        adapter.edit_message = AsyncMock(return_value=SimpleNamespace(success=True))
+        adapter.MAX_MESSAGE_LENGTH = 4096
+
+        config = StreamConsumerConfig(edit_interval=0.01, buffer_threshold=5)
+        consumer = GatewayStreamConsumer(adapter, "chat_123", config)
+        consumer.on_commentary("first")
+
+        task = asyncio.create_task(consumer.run())
+        await started.wait()  # consumer is now blocked inside the slow send
+        # Queue the flush barrier behind the hung send.
+        flush_done = asyncio.get_event_loop().run_in_executor(
+            None, consumer.flush_pending_sync, 5.0
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        # The finally net should have drained + signaled the queued barrier.
+        flushed = await flush_done
+        assert flushed is True
+
+
+# ── segment reset keeps an untouched adapter placeholder ─────────────────
+#
+# A turn that calls a tool before emitting any text hits the tool-boundary
+# reset first.  Dropping the placeholder id there leaves "checking..." on
+# screen and delivers the answer as a second message (measured in the honbu
+# Teams channel: every tool-using turn produced two bot messages).
+
+
+def _consumer_with_placeholder(message_id="placeholder-1"):
+    consumer = GatewayStreamConsumer(
+        adapter=MagicMock(),
+        chat_id="chat-1",
+        metadata={"_stream_message_id": message_id},
+    )
+    return consumer
+
+
+def test_segment_reset_keeps_placeholder_never_written_to():
+    consumer = _consumer_with_placeholder()
+
+    consumer._reset_segment_state()
+
+    assert consumer._message_id == "placeholder-1"
+    assert consumer._segment_preview_message_ids == {"placeholder-1"}
+
+
+def test_segment_reset_drops_message_that_already_showed_text():
+    consumer = _consumer_with_placeholder()
+    consumer._last_sent_text = "partial answer"
+
+    consumer._reset_segment_state()
+
+    assert consumer._message_id is None
+    assert consumer._segment_preview_message_ids == set()
+
+
+def test_segment_reset_still_clears_accumulated_text():
+    consumer = _consumer_with_placeholder()
+    consumer._accumulated = "buffered"
+
+    consumer._reset_segment_state()
+
+    assert consumer._accumulated == ""
+    assert consumer._last_sent_text == ""
+
+
+def test_segment_reset_preserves_no_edit_sentinel():
+    consumer = _consumer_with_placeholder(message_id="__no_edit__")
+
+    consumer._reset_segment_state(preserve_no_edit=True)
+
+    assert consumer._message_id == "__no_edit__"
