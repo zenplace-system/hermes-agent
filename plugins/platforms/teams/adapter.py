@@ -1050,7 +1050,26 @@ class TeamsAdapter(BasePlatformAdapter):
         # The mirrored ``text/html`` body, kept so hyperlink targets that
         # ``activity.text`` drops can be merged back in after this loop.
         html_body_mirror = ""
-        for att in getattr(activity, "attachments", None) or []:
+        raw_attachments = list(getattr(activity, "attachments", None) or [])
+        # An attachment that never reaches us and an attachment we silently drop
+        # look identical from the outside: the user asks about a document and the
+        # agent says it sees nothing. Record the inventory so the two can be told
+        # apart from the log alone.
+        if raw_attachments:
+            logger.info(
+                "[teams] inbound attachments (%d): %s",
+                len(raw_attachments),
+                "; ".join(
+                    "type=%s name=%s url=%s"
+                    % (
+                        getattr(a, "content_type", None) or "-",
+                        getattr(a, "name", None) or "-",
+                        "yes" if getattr(a, "content_url", None) else "no",
+                    )
+                    for a in raw_attachments
+                ),
+            )
+        for att in raw_attachments:
             content_url = getattr(att, "content_url", None)
             content_type = (getattr(att, "content_type", None) or "").lower()
             att_name = getattr(att, "name", None) or ""
@@ -1076,6 +1095,11 @@ class TeamsAdapter(BasePlatformAdapter):
                 download_url = content.get("downloadUrl") or content.get("download_url")
                 file_type = (content.get("fileType") or content.get("file_type") or "").lstrip(".")
                 if not download_url:
+                    dropped_media.append(att_name or "document")
+                    logger.warning(
+                        "[teams] File attachment '%s' carried no downloadUrl, skipping",
+                        att_name or "-",
+                    )
                     continue
                 filename = att_name or (f"document.{file_type}" if file_type else "document")
                 try:
@@ -1145,6 +1169,16 @@ class TeamsAdapter(BasePlatformAdapter):
                         "[teams] Failed to cache attachment '%s' (%s): %s",
                         att_name or content_url, content_type, e,
                     )
+            else:
+                # No content_url and no branch above claimed it. Teams sends
+                # channel files this way (contentType "reference"), and falling
+                # out of the loop here is what made the file invisible with
+                # nothing in the log to show for it.
+                dropped_media.append(att_name or content_type or "file")
+                logger.warning(
+                    "[teams] Attachment '%s' (%s) has no downloadable URL, skipping",
+                    att_name or "-", content_type or "-",
+                )
 
         # Put hyperlink targets back into the text. Skipped for slash commands
         # so a command's arguments are never rewritten.

@@ -562,6 +562,90 @@ class TestTeamsAttachmentClassification:
         assert event.message_type == MessageType.DOCUMENT
         assert len(event.media_urls) == 2
 
+    @pytest.mark.anyio
+    async def test_html_body_attachment_stays_text(self):
+        from gateway.platforms.base import MessageType
+
+        adapter = self._make_adapter()
+        activity = self._make_activity([self._html_body_attachment()])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.TEXT
+        assert event.media_urls == []
+
+    @pytest.mark.anyio
+    async def test_image_only_still_photo(self):
+        from gateway.platforms.base import MessageType
+
+        adapter = self._make_adapter()
+
+        async def fake_cache_image(url, *a, **kw):
+            return "/tmp/img.png"
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(_teams_mod, "cache_image_from_url", fake_cache_image)
+            activity = self._make_activity([self._image_attachment()])
+            await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.PHOTO
+        assert event.media_urls == ["/tmp/img.png"]
+
+    @pytest.mark.anyio
+    async def test_download_failure_degrades_to_text(self):
+        from gateway.platforms.base import MessageType
+
+        adapter = self._make_adapter()
+        adapter._fetch_attachment_bytes = AsyncMock(side_effect=Exception("boom"))
+
+        activity = self._make_activity([self._file_download_attachment()])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.message_type == MessageType.TEXT
+        assert event.media_urls == []
+
+    def _reference_attachment(self, name="teirei.md"):
+        # A file attached in a Teams channel arrives as a SharePoint reference.
+        att = MagicMock()
+        att.content_type = "reference"
+        att.content_url = None
+        att.name = name
+        att.content = None
+        return att
+
+    @pytest.mark.anyio
+    async def test_reference_without_url_is_reported_to_the_agent(self):
+        """An attachment we cannot fetch must never vanish quietly.
+
+        Dropping it left the agent answering 'I see no document' to someone who
+        had just attached one, with nothing in the log to explain the gap.
+        """
+
+        adapter = self._make_adapter()
+        activity = self._make_activity([self._reference_attachment()])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.media_urls == []
+        assert "teirei.md" in event.text
+        assert "NOT visible to you" in event.text
+
+    @pytest.mark.anyio
+    async def test_file_info_without_download_url_is_reported(self):
+        adapter = self._make_adapter()
+        attachment = self._file_download_attachment()
+        attachment.content = {"fileType": "pdf"}
+
+        activity = self._make_activity([attachment])
+        await adapter._on_message(self._make_ctx(activity))
+
+        event = adapter.handle_message.call_args[0][0]
+        assert event.media_urls == []
+        assert "report.pdf" in event.text
+        assert "NOT visible to you" in event.text
+
 
 # ── _standalone_send (out-of-process cron delivery) ──────────────────────
 
