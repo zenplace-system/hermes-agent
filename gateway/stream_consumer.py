@@ -44,6 +44,11 @@ _DONE = object()
 _NEW_SEGMENT = object()
 _COMMENTARY = object()
 
+_INTERNAL_DELIVERY_MARKERS = (
+    "[[audio_as_voice]]",
+    "[[as_document]]",
+)
+
 # Queue marker for a synchronous flush barrier.  Enqueued as
 # ``(_FLUSH, threading.Event)``; the drain loop finalizes and delivers any
 # buffered segment, then sets the event.  A caller on the agent worker thread
@@ -52,6 +57,21 @@ _COMMENTARY = object()
 # sending a blocking interactive prompt (clarify poll) so the prompt is the
 # last thing on screen, not racing ahead of buffered prose.
 _FLUSH = object()
+
+
+def _strip_trailing_partial_delivery_marker(text: str) -> str:
+    """Hide an internal delivery marker while it is still streaming.
+
+    Complete markers are removed by the platform display sanitizer. A
+    mid-stream edit can arrive after only ``[[as`` has been generated, so
+    strip a trailing proper prefix until it completes or diverges into prose.
+    """
+    for marker in _INTERNAL_DELIVERY_MARKERS:
+        for prefix_length in range(len(marker) - 1, 1, -1):
+            prefix = marker[:prefix_length]
+            if text.endswith(prefix):
+                return text[:-prefix_length]
+    return text
 
 
 def escape_code_fences_for_display(text: str) -> str:
@@ -1156,7 +1176,8 @@ class GatewayStreamConsumer:
         stream finishes — we just need to hide the raw directives from the
         user.
         """
-        return _BasePlatformAdapter.strip_media_directives_for_display(text)
+        cleaned = _BasePlatformAdapter.strip_media_directives_for_display(text)
+        return _strip_trailing_partial_delivery_marker(cleaned)
 
     async def _send_new_chunk(
         self,
@@ -1956,7 +1977,10 @@ class GatewayStreamConsumer:
         # Strip MEDIA: directives so they don't appear as visible text.
         # Media files are delivered as native attachments after the stream
         # finishes (via _deliver_media_from_response in gateway/run.py).
-        text = self._clean_for_display(text)
+        cursor = self.cfg.cursor if self.cfg.cursor and text.endswith(self.cfg.cursor) else ""
+        display_body = text[:-len(cursor)] if cursor else text
+        display_body = self._clean_for_display(display_body)
+        text = f"{display_body}{cursor}" if display_body.strip() and cursor else display_body
         # Ensure code fences are balanced before send/edit.  Model output
         # truncated mid-code-block (e.g. finish_reason="length") leaves an
         # orphaned ``` which, on Discord/Slack/Matrix, causes the entire

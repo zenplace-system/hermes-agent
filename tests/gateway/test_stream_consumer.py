@@ -72,6 +72,19 @@ class TestCleanForDisplay:
         assert "[[audio_as_voice]]" not in result
         assert "MEDIA:" not in result
 
+    @pytest.mark.parametrize(
+        "partial",
+        ["[[", "[[a", "[[as", "[[as_doc", "[[audio_as_vo"],
+    )
+    def test_partial_internal_delivery_marker_is_held_back(self, partial):
+        """An interval edit must not expose an unfinished internal marker."""
+        assert GatewayStreamConsumer._clean_for_display(partial) == ""
+
+    def test_partial_marker_after_prose_is_removed_without_losing_prose(self):
+        result = GatewayStreamConsumer._clean_for_display("Preparing file\n[[as_doc")
+
+        assert result == "Preparing file\n"
+
 
 # ── Integration: _send_or_edit strips MEDIA: ─────────────────────────────
 
@@ -176,6 +189,19 @@ class TestSendOrEditMediaStripping:
         sent_text = adapter.send.call_args[1]["content"]
         assert "MEDIA:" not in sent_text
         assert "Here is your image" in sent_text
+
+    @pytest.mark.asyncio
+    async def test_partial_delivery_marker_with_cursor_is_not_sent(self):
+        """Regression: Teams must never persist a ``[[as ▉`` preview."""
+        adapter = MagicMock()
+        adapter.send = AsyncMock()
+        adapter.MAX_MESSAGE_LENGTH = 4096
+        consumer = GatewayStreamConsumer(adapter, "chat_123")
+
+        result = await consumer._send_or_edit("[[as ▉")
+
+        assert result is True
+        adapter.send.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_edit_strips_media(self):
