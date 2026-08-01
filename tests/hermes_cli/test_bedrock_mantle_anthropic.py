@@ -142,6 +142,10 @@ def test_bedrock_api_key_flow_routes_claude_to_messages(monkeypatch):
         lambda name: "bedrock-key" if name == "AWS_BEARER_TOKEN_BEDROCK" else "",
     )
     monkeypatch.setattr(
+        "hermes_cli.auth._resolve_api_key_provider_secret",
+        lambda provider, config: ("bedrock-key", "test"),
+    )
+    monkeypatch.setattr(
         "hermes_cli.config.save_env_value",
         lambda name, value: saved_env.__setitem__(name, value),
     )
