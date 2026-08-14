@@ -5961,12 +5961,14 @@ class TurnRunner:
         _input_toks = 0
         _output_toks = 0
         _context_length = 0
+        _compression_count = 0
         _agent = ctx.agent_holder[0]
         if _agent and hasattr(_agent, "context_compressor"):
             _last_prompt_toks = getattr(_agent.context_compressor, "last_prompt_tokens", 0)
             _input_toks = getattr(_agent, "session_prompt_tokens", 0)
             _output_toks = getattr(_agent, "session_completion_tokens", 0)
             _context_length = getattr(_agent.context_compressor, "context_length", 0) or 0
+            _compression_count = getattr(_agent.context_compressor, "compression_count", 0) or 0
         _resolved_model = getattr(_agent, "model", None) if _agent else None
 
         # Sync session_id immediately after run_conversation(). Compression
@@ -6104,6 +6106,7 @@ class TurnRunner:
                 "output_tokens": _output_toks,
                 "model": _resolved_model,
                 "context_length": _context_length,
+                "compression_count": _compression_count,
             }
 
         # Scan tool results for MEDIA:<path> tags that need to be delivered
@@ -6185,6 +6188,7 @@ class TurnRunner:
             "output_tokens": _output_toks,
             "model": _resolved_model,
             "context_length": _context_length,
+            "compression_count": _compression_count,
             "session_id": effective_session_id,
             "response_previewed": result.get("response_previewed", False),
             "response_transformed": result.get("response_transformed", False),
@@ -19208,6 +19212,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     context_length=agent_result.get("context_length") or None,
                     cwd=os.environ.get("TERMINAL_CWD", ""),
                     turn_seconds=_turn_seconds,
+                    compression_count=agent_result.get("compression_count", 0) or 0,
                 )
             except Exception as _footer_err:
                 logger.debug("runtime_footer build failed: %s", _footer_err)

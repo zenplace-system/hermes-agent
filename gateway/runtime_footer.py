@@ -12,10 +12,11 @@ Config (``~/.hermes/config.yaml``)::
         fields: [model, context_pct, cwd]   # order shown; drop any to hide
 
 Available fields:
-    model        — bare model id, vendor prefix dropped (``gpt-5.4``)
-    context_pct  — last-call context occupancy as a percent (``5%``)
-    latency      — wall-clock duration of the turn (``22s``, ``1m05s``)
-    cwd          — home-relative working dir (``~``)
+    model              — bare model id, vendor prefix dropped (``gpt-5.4``)
+    context_pct        — last-call context occupancy as a percent (``5%``)
+    compression_count  — context compression count (``cmp 2``)
+    latency            — wall-clock duration of the turn (``22s``, ``1m05s``)
+    cwd                — home-relative working dir (``~``)
 
 ``latency`` is opt-in: it is NOT in the default field set, so a footer whose
 ``fields`` are unset renders exactly as before.
@@ -115,6 +116,7 @@ def format_runtime_footer(
     context_length: Optional[int],
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
+    compression_count: Optional[int] = None,
     fields: Iterable[str] = _DEFAULT_FIELDS,
 ) -> str:
     """Render the footer line, or return "" if no fields have data.
@@ -137,6 +139,9 @@ def format_runtime_footer(
             # timing (call sites that don't measure) or the value is negative.
             if turn_seconds is not None and turn_seconds >= 0:
                 parts.append(_format_latency(turn_seconds))
+        elif field == "compression_count":
+            if compression_count is not None and compression_count >= 0:
+                parts.append(f"cmp {compression_count}")
         elif field == "cwd":
             rel = _home_relative_cwd(cwd or os.environ.get("TERMINAL_CWD", ""))
             if rel:
@@ -157,6 +162,7 @@ def build_footer_line(
     context_length: Optional[int],
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
+    compression_count: Optional[int] = None,
 ) -> str:
     """Top-level entry point used by gateway/run.py.
 
@@ -177,5 +183,6 @@ def build_footer_line(
         context_length=context_length,
         cwd=cwd,
         turn_seconds=turn_seconds,
+        compression_count=compression_count,
         fields=cfg.get("fields") or _DEFAULT_FIELDS,
     )

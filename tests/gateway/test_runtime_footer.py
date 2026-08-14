@@ -74,6 +74,25 @@ def test_format_footer_skips_missing_context_length():
     assert "/tmp/wd" in out
 
 
+@pytest.mark.parametrize(
+    "compression_count,expected",
+    [
+        (0, "cmp 0"),
+        (3, "cmp 3"),
+    ],
+)
+def test_format_footer_renders_compression_count(compression_count, expected):
+    out = format_runtime_footer(
+        model="m",
+        context_tokens=0,
+        context_length=None,
+        cwd="",
+        compression_count=compression_count,
+        fields=("compression_count",),
+    )
+    assert out == expected
+
+
 # ---------------------------------------------------------------------------
 # resolve_footer_config
 # ---------------------------------------------------------------------------
@@ -244,6 +263,27 @@ def test_build_footer_line_threads_turn_seconds(monkeypatch):
         turn_seconds=22.0,
     )
     assert out == "gpt-5.4 · 22s"
+
+
+def test_build_footer_line_threads_compression_count(monkeypatch):
+    monkeypatch.delenv("TERMINAL_CWD", raising=False)
+    out = build_footer_line(
+        user_config={
+            "display": {
+                "runtime_footer": {
+                    "enabled": True,
+                    "fields": ["model", "compression_count"],
+                }
+            }
+        },
+        platform_key="slack",
+        model="gpt-5.6-sol",
+        context_tokens=0,
+        context_length=None,
+        cwd="",
+        compression_count=2,
+    )
+    assert out == "gpt-5.6-sol · cmp 2"
 
 
 # ---------------------------------------------------------------------------
