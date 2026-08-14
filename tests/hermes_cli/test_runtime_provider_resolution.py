@@ -1083,7 +1083,7 @@ class TestAzureAnthropicEnvVarHint:
         })
         monkeypatch.setattr(rp, "load_pool", lambda provider: None)
         called = {"resolve_anthropic_token": False}
-        def _fake_resolve():
+        def _fake_resolve(_base_url=None):
             called["resolve_anthropic_token"] = True
             return "token-from-resolver"
         monkeypatch.setattr(
