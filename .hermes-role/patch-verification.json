@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "scope": "system-department",
+  "base_upstream": "f80f453ae0679347e38abc917c7f94f717bf96c5",
+  "capabilities": [
+    "external_skill_dirs",
+    "slack_gateway"
+  ],
+  "runtime_probe_status": "verified"
+}
