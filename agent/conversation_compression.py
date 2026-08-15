@@ -3297,7 +3297,13 @@ def compress_context(
                         model_config_patch={
                             PROACTIVE_PRUNE_REARM_MODEL_CONFIG_KEY: None,
                         },
+                        compaction_kind="batch",
                     )
+                    _load_counts = getattr(
+                        agent.context_compressor, "_load_compaction_counts", None
+                    )
+                    if callable(_load_counts):
+                        _load_counts()
                     split_status = "in_place_committed"
                     # Reset the flush identity set so the next turn's appends are
                     # diffed against the COMPACTED transcript: the compacted dicts
@@ -3468,6 +3474,11 @@ def compress_context(
                     }
                 _session_commit_succeeded = True
             except Exception as e:
+                _load_counts = getattr(
+                    agent.context_compressor, "_load_compaction_counts", None
+                )
+                if callable(_load_counts):
+                    _load_counts()
                 if (
                     not in_place
                     and locals().get("old_session_id")

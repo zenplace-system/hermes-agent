@@ -237,6 +237,16 @@ def test_publish_compression_child_is_atomic_on_handoff_failure(
 
 def test_publish_compression_child_exposes_complete_child(db: SessionDB) -> None:
     db.create_session("atomic-parent", source="webui")
+    db.archive_and_compact(
+        "atomic-parent",
+        [{"role": "user", "content": "older summary"}],
+        compaction_kind="batch",
+    )
+    db.archive_and_compact(
+        "atomic-parent",
+        [{"role": "user", "content": "micro summary"}],
+        compaction_kind="micro",
+    )
     db.append_message("atomic-parent", "user", "original")
     assert db.try_acquire_compression_lock("atomic-parent", "winner", ttl_seconds=60)
 
@@ -254,7 +264,49 @@ def test_publish_compression_child_exposes_complete_child(db: SessionDB) -> None
     assert child is not None
     assert child["id"] == "atomic-child"
     assert child["system_prompt"] == "compressed system"
+    assert child["compression_count"] == 2
+    assert child["micro_compaction_count"] == 1
     assert [m["content"] for m in db.get_messages("atomic-child")] == ["summary"]
+
+
+def test_compaction_counts_default_to_zero_and_increment_with_commit(
+    db: SessionDB,
+) -> None:
+    db.create_session("durable-counts", source="webui")
+
+    assert db.get_compaction_counts("durable-counts") == (0, 0)
+
+    db.archive_and_compact(
+        "durable-counts",
+        [{"role": "user", "content": "batch summary"}],
+        compaction_kind="batch",
+    )
+    db.archive_and_compact(
+        "durable-counts",
+        [{"role": "user", "content": "micro summary"}],
+        compaction_kind="micro",
+    )
+
+    assert db.get_compaction_counts("durable-counts") == (1, 1)
+
+
+def test_compaction_count_does_not_increment_when_compaction_rolls_back(
+    db: SessionDB, monkeypatch
+) -> None:
+    db.create_session("rollback-count", source="webui")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("insert failed")
+
+    monkeypatch.setattr(db, "_insert_message_rows", _boom)
+    with pytest.raises(RuntimeError, match="insert failed"):
+        db.archive_and_compact(
+            "rollback-count",
+            [{"role": "user", "content": "summary"}],
+            compaction_kind="batch",
+        )
+
+    assert db.get_compaction_counts("rollback-count") == (0, 0)
 
 
 def test_publish_compression_child_rejects_lost_or_expired_lease(db: SessionDB) -> None:

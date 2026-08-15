@@ -15,6 +15,7 @@ Available fields:
     model              — bare model id, vendor prefix dropped (``gpt-5.4``)
     context_pct        — last-call context occupancy as a percent (``5%``)
     compression_count  — context compression count (``cmp 2``)
+    micro_compaction_count — micro-compaction count (``micro 1``)
     latency            — wall-clock duration of the turn (``22s``, ``1m05s``)
     cwd                — home-relative working dir (``~``)
 
@@ -117,6 +118,7 @@ def format_runtime_footer(
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
     compression_count: Optional[int] = None,
+    micro_compaction_count: Optional[int] = None,
     fields: Iterable[str] = _DEFAULT_FIELDS,
 ) -> str:
     """Render the footer line, or return "" if no fields have data.
@@ -140,8 +142,11 @@ def format_runtime_footer(
             if turn_seconds is not None and turn_seconds >= 0:
                 parts.append(_format_latency(turn_seconds))
         elif field == "compression_count":
-            if compression_count is not None and compression_count >= 0:
+            if compression_count is not None and compression_count > 0:
                 parts.append(f"cmp {compression_count}")
+        elif field == "micro_compaction_count":
+            if micro_compaction_count is not None and micro_compaction_count > 0:
+                parts.append(f"micro {micro_compaction_count}")
         elif field == "cwd":
             rel = _home_relative_cwd(cwd or os.environ.get("TERMINAL_CWD", ""))
             if rel:
@@ -163,6 +168,7 @@ def build_footer_line(
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
     compression_count: Optional[int] = None,
+    micro_compaction_count: Optional[int] = None,
 ) -> str:
     """Top-level entry point used by gateway/run.py.
 
@@ -184,5 +190,6 @@ def build_footer_line(
         cwd=cwd,
         turn_seconds=turn_seconds,
         compression_count=compression_count,
+        micro_compaction_count=micro_compaction_count,
         fields=cfg.get("fields") or _DEFAULT_FIELDS,
     )

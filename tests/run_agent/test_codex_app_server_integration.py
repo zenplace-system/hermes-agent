@@ -186,6 +186,41 @@ class TestRunConversationCodexPath:
             )
         ]
 
+    def test_native_codex_compaction_persists_count(self, monkeypatch, tmp_path):
+        from hermes_state import SessionDB
+
+        def fake_run_turn(self, user_input: str, **kwargs):
+            return TurnResult(
+                final_text="done",
+                projected_messages=[{"role": "assistant", "content": "done"}],
+                turn_id="turn-durable-compact",
+                thread_id="thread-durable-compact",
+                compacted=True,
+            )
+
+        monkeypatch.setattr(CodexAppServerSession, "run_turn", fake_run_turn)
+        monkeypatch.setattr(
+            CodexAppServerSession,
+            "ensure_started",
+            lambda self: "thread-durable-compact",
+        )
+        db = SessionDB(db_path=tmp_path / "state.db")
+        try:
+            db.create_session("codex-durable", source="cli")
+            agent = _make_codex_agent(
+                session_db=db,
+                session_id="codex-durable",
+            )
+
+            with patch.object(agent, "_spawn_background_review", return_value=None):
+                result = agent.run_conversation("hello")
+
+            assert result["completed"] is True
+            assert db.get_compaction_counts("codex-durable") == (1, 0)
+            assert agent.context_compressor.compression_count == 1
+        finally:
+            db.close()
+
     def test_projected_messages_are_spliced(self, fake_session):
         agent = _make_codex_agent()
         with patch.object(agent, "_spawn_background_review", return_value=None):

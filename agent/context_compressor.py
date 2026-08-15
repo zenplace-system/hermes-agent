@@ -1630,6 +1630,7 @@ class ContextCompressor(ContextEngine):
         self._micro_compact_consecutive_failures = 0
         self._micro_compact_last_failure_cursor = -1
         self._micro_compact_passes = 0
+        self.micro_compaction_count = 0
         self._micro_compact_tokens_saved_total = 0
         self._micro_compact_turns_since_pass = 0
 
@@ -1909,10 +1910,29 @@ class ContextCompressor(ContextEngine):
         self._prellm_skip_count = 0
         self._anti_thrash_recovery_deadline = 0.0
         self._proactive_prune_rearm_tokens = 0
+        self.compression_count = 0
+        self.micro_compaction_count = 0
         self.get_active_compression_failure_cooldown()
         self._load_fallback_compression_streak()
         self._load_ineffective_compression_count()
         self._load_proactive_prune_rearm_tokens()
+        self._load_compaction_counts()
+
+    def _load_compaction_counts(self) -> None:
+        """Refresh durable batch and micro counts for the bound session."""
+        session_db = getattr(self, "_session_db", None)
+        session_id = getattr(self, "_session_id", "")
+        getter = getattr(session_db, "get_compaction_counts", None)
+        if not session_id or not callable(getter):
+            return
+        try:
+            batch_count, micro_count = getter(session_id)
+            self.compression_count = max(0, int(batch_count or 0))
+            self.micro_compaction_count = max(0, int(micro_count or 0))
+        except (TypeError, ValueError, sqlite3.Error) as exc:
+            logger.debug("compaction count lookup failed: %s", exc)
+        except Exception as exc:
+            logger.debug("compaction count lookup failed (non-sqlite): %s", exc)
 
     def on_session_start(self, session_id: str, **kwargs) -> None:
         """Bind session-scoped compression state for a new or resumed session."""
@@ -2620,6 +2640,7 @@ class ContextCompressor(ContextEngine):
         # the agent's bounded flush-scan cursor (sibling of the #75170 site).
         self._flush_scan_cursor_invalidated: bool = False
         self._micro_compact_passes: int = 0
+        self.micro_compaction_count: int = 0
         self._micro_compact_tokens_saved_total: int = 0
         # Cadence: run a pass every Nth completed turn. Each pass rewrites
         # already-sent history and so breaks the prompt-cache prefix, which
@@ -6247,7 +6268,7 @@ This compaction should PRIORITISE preserving all information related to the focu
     def _sync_micro_compact_to_db(
         self,
         compacted_messages: List[Dict[str, Any]],
-    ) -> None:
+    ) -> bool:
         """Persist the micro-compacted message set to the session DB.
 
         Soft-archives every currently-active message row (``active = 0``)
@@ -6264,17 +6285,24 @@ This compaction should PRIORITISE preserving all information related to the focu
         session_db = getattr(self, "_session_db", None)
         session_id = getattr(self, "_session_id", "")
         if not session_db or not session_id:
-            return
+            return False
         try:
-            session_db.archive_and_compact(session_id, compacted_messages)
+            session_db.archive_and_compact(
+                session_id,
+                compacted_messages,
+                compaction_kind="micro",
+            )
+            self._load_compaction_counts()
             for msg in compacted_messages:
                 if isinstance(msg, dict):
                     msg[_DB_PERSISTED_MARKER] = True
+            return True
         except Exception:
             logger.info(
                 "Micro-compaction DB sync failed — resume will double-load "
                 "compacted messages until the next batch compression"
             )
+            return False
 
     def _splice_micro_compact_result(
         self,

@@ -87,6 +87,7 @@ class TestInPlaceCompaction:
             row = db.get_session(sid)
             assert row["end_reason"] is None
             assert row["title"] == "my-research"
+            assert row["compression_count"] == 1
             # DURABLE, NON-DESTRUCTIVE compaction (the core invariant, per
             # Teknium's review): the LIVE context is the compacted set, but the
             # pre-compaction turns are PRESERVED on disk (active=0), not deleted
@@ -195,6 +196,7 @@ class TestRotationFallbackWhenFlagOff:
             ).fetchall()
             assert len(child) == 1
             assert child[0]["title"] == "my-research"
+            assert db.get_session(agent.session_id)["compression_count"] == 1
             # The compacted child is persisted atomically at the rotation
             # boundary, so a headless process killed before finalization can
             # still resume it without duplicating the two handoff messages.

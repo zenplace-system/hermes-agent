@@ -5070,7 +5070,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             parent = conn.execute(
                 """SELECT ended_at, cwd, git_branch, git_repo_root,
                           user_id, session_key, chat_id, chat_type,
-                          thread_id, display_name, origin_json, profile_name
+                          thread_id, display_name, origin_json, profile_name,
+                          compression_count, micro_compaction_count
                    FROM sessions WHERE id = ?""",
                 (parent_session_id,),
             ).fetchone()
@@ -5088,8 +5089,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                    system_prompt_hash,
                    parent_session_id, cwd, git_branch, git_repo_root,
                    profile_name, user_id, session_key, chat_id, chat_type,
-                   thread_id, display_name, origin_json, started_at
-                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   thread_id, display_name, origin_json,
+                   compression_count, micro_compaction_count, started_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     child_session_id,
                     source,
@@ -5113,6 +5115,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     parent["thread_id"],
                     parent["display_name"],
                     parent["origin_json"],
+                    int(parent["compression_count"] or 0) + 1,
+                    int(parent["micro_compaction_count"] or 0),
                     time.time(),
                 ),
             )
@@ -8676,6 +8680,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         session_id: str,
         compacted_messages: List[Dict[str, Any]],
         model_config_patch: Optional[Dict[str, Any]] = None,
+        compaction_kind: Optional[str] = None,
     ) -> int:
         """Non-destructive in-place compaction for a single durable session id.
 
@@ -8700,8 +8705,13 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         for compaction. ``message_count`` is set to the ACTIVE (compacted) count,
         matching what the live load returns. ``model_config_patch`` is merged
         into the session's JSON config in the same transaction; a ``None``
-        value removes that key. Returns the new active count.
+        value removes that key. ``compaction_kind`` increments the matching
+        durable counter inside the same transaction. Returns the new active
+        count.
         """
+
+        if compaction_kind not in (None, "batch", "micro"):
+            raise ValueError(f"Unknown compaction kind: {compaction_kind}")
 
         def _do(conn):
             patched_model_config = None
@@ -8741,7 +8751,61 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     "model_config = ? WHERE id = ?",
                     (inserted, tool_calls_total, patched_model_config, session_id),
                 )
+            if compaction_kind == "batch":
+                conn.execute(
+                    "UPDATE sessions SET compression_count = compression_count + 1 "
+                    "WHERE id = ?",
+                    (session_id,),
+                )
+            elif compaction_kind == "micro":
+                conn.execute(
+                    "UPDATE sessions SET micro_compaction_count = "
+                    "micro_compaction_count + 1 WHERE id = ?",
+                    (session_id,),
+                )
             return inserted
+
+        return self._execute_write(_do)
+
+    def get_compaction_counts(self, session_id: str) -> tuple[int, int]:
+        """Return durable (batch, micro) compaction counts for one session."""
+        with self._read_ctx() as conn:
+            row = conn.execute(
+                "SELECT compression_count, micro_compaction_count "
+                "FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return (0, 0)
+        return (
+            max(0, int(row["compression_count"] or 0)),
+            max(0, int(row["micro_compaction_count"] or 0)),
+        )
+
+    def increment_compaction_count(
+        self, session_id: str, kind: str
+    ) -> tuple[int, int]:
+        """Atomically commit one externally-owned compaction boundary."""
+        if kind not in ("batch", "micro"):
+            raise ValueError(f"Unknown compaction kind: {kind}")
+        column = "compression_count" if kind == "batch" else "micro_compaction_count"
+
+        def _do(conn):
+            updated = conn.execute(
+                f"UPDATE sessions SET {column} = {column} + 1 WHERE id = ?",
+                (session_id,),
+            )
+            if updated.rowcount != 1:
+                raise RuntimeError(f"Compaction session not found: {session_id}")
+            row = conn.execute(
+                "SELECT compression_count, micro_compaction_count "
+                "FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            return (
+                max(0, int(row["compression_count"] or 0)),
+                max(0, int(row["micro_compaction_count"] or 0)),
+            )
 
         return self._execute_write(_do)
 

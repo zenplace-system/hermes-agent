@@ -77,7 +77,7 @@ def test_format_footer_skips_missing_context_length():
 @pytest.mark.parametrize(
     "compression_count,expected",
     [
-        (0, "cmp 0"),
+        (0, ""),
         (3, "cmp 3"),
     ],
 )
@@ -89,6 +89,30 @@ def test_format_footer_renders_compression_count(compression_count, expected):
         cwd="",
         compression_count=compression_count,
         fields=("compression_count",),
+    )
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    "compression_count,micro_compaction_count,expected",
+    [
+        (0, 0, ""),
+        (2, 0, "cmp 2"),
+        (0, 1, "micro 1"),
+        (2, 1, "cmp 2 · micro 1"),
+    ],
+)
+def test_format_footer_renders_only_nonzero_durable_compaction_counts(
+    compression_count, micro_compaction_count, expected
+):
+    out = format_runtime_footer(
+        model="m",
+        context_tokens=0,
+        context_length=None,
+        cwd="",
+        compression_count=compression_count,
+        micro_compaction_count=micro_compaction_count,
+        fields=("compression_count", "micro_compaction_count"),
     )
     assert out == expected
 
@@ -284,6 +308,32 @@ def test_build_footer_line_threads_compression_count(monkeypatch):
         compression_count=2,
     )
     assert out == "gpt-5.6-sol · cmp 2"
+
+
+def test_build_footer_line_threads_both_compaction_counts(monkeypatch):
+    monkeypatch.delenv("TERMINAL_CWD", raising=False)
+    out = build_footer_line(
+        user_config={
+            "display": {
+                "runtime_footer": {
+                    "enabled": True,
+                    "fields": [
+                        "model",
+                        "compression_count",
+                        "micro_compaction_count",
+                    ],
+                }
+            }
+        },
+        platform_key="slack",
+        model="gpt-5.6-sol",
+        context_tokens=0,
+        context_length=None,
+        cwd="",
+        compression_count=2,
+        micro_compaction_count=1,
+    )
+    assert out == "gpt-5.6-sol · cmp 2 · micro 1"
 
 
 # ---------------------------------------------------------------------------
