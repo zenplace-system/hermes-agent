@@ -293,6 +293,24 @@ class TestSlackWorkspaceCollisionIsolation:
         assert adapter._channel_teams["D_SHARED"] == {"T_ONE", "T_TWO"}
         assert "D_SHARED" not in adapter._channel_team
 
+    @pytest.mark.asyncio
+    async def test_message_and_app_mention_views_share_client_message_dedup(self, adapter):
+        event = {
+            "text": "<@U_BOT> investigate this",
+            "user": "U_USER",
+            "channel": "C_SHARED",
+            "channel_type": "channel",
+            "ts": "1787085554.443549",
+            "client_msg_id": "7ed330dc-5dce-4cde-976c-fb5f77ad97c3",
+        }
+
+        # Slack can expose workspace identity differently to the generic
+        # message and app_mention listeners for the same authored message.
+        await adapter._handle_slack_message(event, {"team_id": "T_ONE"})
+        await adapter._handle_slack_message(event, {})
+
+        assert adapter.handle_message.await_count == 1
+
 
 # ---------------------------------------------------------------------------
 # TestAppMentionHandler

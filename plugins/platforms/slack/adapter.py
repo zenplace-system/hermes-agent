@@ -5804,6 +5804,20 @@ class SlackAdapter(BasePlatformAdapter):
                 normalized_event["_slack_changed_event_ts"] = changed_event_ts
             event = normalized_event
 
+        # ``message`` and ``app_mention`` listeners can both receive the same
+        # human-authored Slack message.  Their outer payloads are not guaranteed
+        # to expose workspace identity in the same shape, so a workspace-scoped
+        # ``ts`` key alone can miss the duplicate and queue the second delivery
+        # as a busy-session follow-up.  Slack's client_msg_id is a UUID attached
+        # to the authored message itself and is shared by both event views; claim
+        # it first as a transport-independent alias.  Bot-authored events often
+        # omit client_msg_id and continue through the existing scoped-ts path.
+        client_msg_id = str(event.get("client_msg_id") or "").strip()
+        if client_msg_id and self._dedup.is_duplicate(
+            f"slack-client-message:{client_msg_id}"
+        ):
+            return
+
         # Dedup: Slack Socket Mode can redeliver events after reconnects (#4777)
         # Scope the dedup id by workspace: Slack event ts values are only
         # unique within one workspace, so two teams' events with the same ts
