@@ -389,6 +389,9 @@ _GATEWAY_AUTH_ERROR_RE = re.compile(
     r"|(?<![\d:,.])401(?!\d))",
     re.IGNORECASE)
 
+_GATEWAY_MODEL_NOT_FOUND_RE = re.compile(
+    r"\b(?:HTTP\s*404|error\s*code\s*:\s*404)\b", re.IGNORECASE)
+
 _GATEWAY_RATE_LIMIT_RE = re.compile(
     r"(rate\s+limit|rate-limited|\b429\b|quota|usage\s+limit)", re.IGNORECASE)
 
@@ -636,6 +639,7 @@ _PROVIDER_ERROR_REPLIES = (
     (_GATEWAY_RATE_LIMIT_RE, "gateway.errors.rate_limited"),
     (_GATEWAY_AUTH_ERROR_RE, "gateway.errors.auth_failed"),
     (_GATEWAY_PROVIDER_POLICY_RE, "gateway.errors.bad_request"),
+    (_GATEWAY_MODEL_NOT_FOUND_RE, "gateway.errors.model_not_found"),
     (_GATEWAY_CONNECTION_INTERRUPTED_RE, "gateway.errors.connection_interrupted"),
     (_GATEWAY_ENDPOINT_UNREACHABLE_RE, "gateway.errors.unreachable"),
     (_GATEWAY_CONNECTION_ERROR_RE, "gateway.errors.connection_unknown"))

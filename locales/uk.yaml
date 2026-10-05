@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ Не вдалося зберегти конфігурацію: {error}"
   model:
     error_prefix: "Помилка: {error}"
-    switched: "Модель змінено на `{model}`"
+    switched: "Налаштування моделі змінено на `{model}`. Відповідь ще не перевірено."
     provider_label: "Провайдер: {provider}"
     context_label: "Контекст: {tokens} токенів"
     max_output_label: "Макс. вихід: {tokens} токенів"

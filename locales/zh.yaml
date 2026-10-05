@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ 无法保存配置：{error}"
   model:
     error_prefix: "错误：{error}"
-    switched: "已切换模型为 `{model}`"
+    switched: "模型设置已改为 `{model}`。尚未验证响应。"
     provider_label: "提供方：{provider}"
     context_label: "上下文：{tokens} tokens"
     max_output_label: "最大输出：{tokens} tokens"

@@ -103,6 +103,19 @@ class TestGatewayConnectionErrorReply:
         assert "rate-limiting" in _gateway_provider_error_reply(
             "rate limited after 3 retries"
         ).lower()
+        assert "/login" in _gateway_provider_error_reply(
+            "HTTP 404: provider authentication failed"
+        )
+        assert "rate-limiting" in _gateway_provider_error_reply(
+            "HTTP 404: rate limited after 3 retries"
+        ).lower()
+
+    def test_model_not_found_reply_is_specific_and_safe(self):
+        raw = "API call failed after 3 attempts: Error code: 404 - {'detail': 'private'}"
+        assert _looks_like_gateway_provider_error(raw)
+        reply = _sanitize_gateway_final_response(Platform.SLACK, raw)
+        assert "HTTP 404" in reply and "/model" in reply
+        assert "private" not in reply
 
     def test_every_reply_names_a_slash_command_and_no_jargon(self):
         """Each shaped reply must give the chat user something they can run; 'provider' and
