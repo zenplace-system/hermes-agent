@@ -940,6 +940,58 @@ def _recover_auth_failure(agent, pool, *, status_code, has_retried_429, error_co
             agent.provider or "provider",
         )
         return False, has_retried_429
+    # A cached gateway agent can retain an OAuth token that another process
+    # already replaced in auth.json. Rebind to the same account's fresh entry
+    # before trying to spend the cached pool's now-invalid refresh token.
+    if agent.provider == "openai-codex" and status_code == 401 and api_key_hint:
+        old_entries = pool.entries()
+        # A stale ID must not make the fallback refresh a different account.
+        failed_entry = next(
+            (entry for entry in old_entries if entry.runtime_api_key == api_key_hint),
+            None,
+        )
+        credential_id = failed_entry.id if failed_entry is not None else None
+        if failed_entry is None and len(old_entries) > 1:
+            _ra().logger.warning(
+                "Codex OAuth 401 could not be attributed to a pool entry; "
+                "refusing to rotate across accounts"
+            )
+            return False, has_retried_429
+        try:
+            from agent.credential_pool import load_pool
+
+            fresh_pool = load_pool("openai-codex")
+            fresh_entries = fresh_pool.entries()
+            target_id = failed_entry.id if failed_entry is not None else None
+            if (
+                target_id is None
+                and len(old_entries) == len(fresh_entries) == 1
+                and old_entries[0].id == fresh_entries[0].id
+            ):
+                target_id = old_entries[0].id
+            replacement = (
+                fresh_pool.reclaim(target_id, model=getattr(agent, "model", None))
+                if target_id else None
+            )
+            if (
+                replacement is not None
+                and replacement.runtime_api_key
+                and replacement.runtime_api_key != api_key_hint
+                and credential_pool_entry_serves_endpoint(
+                    replacement, getattr(agent, "base_url", None)
+                )
+                and agent._swap_credential(replacement) is not False
+            ):
+                agent._credential_pool = fresh_pool
+                _ra().logger.info(
+                    "Codex OAuth credential changed on disk; rebound cached agent "
+                    "to pool entry %s after 401", replacement.id,
+                )
+                return True, has_retried_429
+        except Exception as exc:
+            _ra().logger.warning(
+                "Could not reload Codex OAuth credential after 401: %s", type(exc).__name__
+            )
     # Refresh the entry that supplied the failing key, not current(): refreshing a healthy entry
     # burns its single-use refresh token for a failure it never had.
     refresh_kwargs = {"api_key_hint": api_key_hint}
