@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ تعذّر حفظ الإعدادات: {error}"
   model:
     error_prefix: "خطأ: {error}"
-    switched: "تم التبديل إلى النموذج `{model}`"
+    switched: "تم تحديث إعداد النموذج إلى `{model}`. لم يتم التحقق من الاستجابة بعد."
     provider_label: "المزوّد: {provider}"
     context_label: "السياق: {tokens} رمزًا"
     max_output_label: "أقصى خرج: {tokens} رمزًا"

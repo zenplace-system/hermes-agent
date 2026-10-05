@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ No se pudo guardar la configuración: {error}"
   model:
     error_prefix: "Error: {error}"
-    switched: "Modelo cambiado a `{model}`"
+    switched: "Configuración del modelo cambiada a `{model}`. Respuesta aún sin verificar."
     provider_label: "Proveedor: {provider}"
     context_label: "Contexto: {tokens} tokens"
     max_output_label: "Salida máxima: {tokens} tokens"

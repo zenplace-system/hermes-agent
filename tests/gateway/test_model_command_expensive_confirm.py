@@ -113,6 +113,7 @@ async def test_typed_model_expensive_confirm_once_applies_switch(tmp_path, monke
     reply = await captured["handler"]("once")
 
     assert "gpt-5.5-pro" in reply
+    assert "Response not yet verified" in reply
     overrides = list(runner._session_model_overrides.values())
     assert len(overrides) == 1
     assert overrides[0]["model"] == "openai/gpt-5.5-pro"

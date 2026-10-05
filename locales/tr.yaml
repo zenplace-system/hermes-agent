@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ Yapılandırma kaydedilemedi: {error}"
   model:
     error_prefix: "Hata: {error}"
-    switched: "Model `{model}` olarak değiştirildi"
+    switched: "Model ayarı `{model}` olarak değiştirildi. Yanıt henüz doğrulanmadı."
     provider_label: "Sağlayıcı: {provider}"
     context_label: "Bağlam: {tokens} token"
     max_output_label: "Maks. çıktı: {tokens} token"

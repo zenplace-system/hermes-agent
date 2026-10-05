@@ -50,7 +50,7 @@ gateway:
   config_save_failed: "⚠️ Nem sikerült menteni a konfigurációt: {error}"
   model:
     error_prefix: "Hiba: {error}"
-    switched: "Modell átváltva: `{model}`"
+    switched: "A modellbeállítás erre módosult: `{model}`. A válasz még nincs ellenőrizve."
     provider_label: "Szolgáltató: {provider}"
     context_label: "Kontextus: {tokens} token"
     max_output_label: "Max. kimenet: {tokens} token"
